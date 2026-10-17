@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI 메일 자동응답</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#2747A8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="답장도우미">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 로그인 → 앱 셸(좌측 메뉴 · 목록 · 상세). 좁은 화면에서는 메뉴가 상단 탭, 상세가 목록 아래로 쌓임 */
+:root{
+  --bg:#F3F5F8; --surface:#FFFFFF; --surface-2:#EBEFF5; --line:#D8DEE8;
+  --fg:#18202E; --muted:#5D6779; --accent:#2747A8; --accent-soft:#E3E9FA; --on-accent:#FFFFFF;
+  --ok:#1D7A4F; --ok-soft:#DDF2E6; --warn:#A35F00; --warn-soft:#FBEBD2; --bad:#B3261E; --bad-soft:#F9DEDC;
+  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10141B; --surface:#171C25; --surface-2:#1F2531; --line:#2C3443;
+  --fg:#E6EAF1; --muted:#98A2B5; --accent:#8BA6F5; --accent-soft:#232E4D; --on-accent:#0E1526;
+  --ok:#5FCB94; --ok-soft:#173326; --warn:#F0B35A; --warn-soft:#3A2B12; --bad:#F2928A; --bad-soft:#3D1D1B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10141B; --surface:#171C25; --surface-2:#1F2531; --line:#2C3443;
+  --fg:#E6EAF1; --muted:#98A2B5; --accent:#8BA6F5; --accent-soft:#232E4D; --on-accent:#0E1526;
+  --ok:#5FCB94; --ok-soft:#173326; --warn:#F0B35A; --warn-soft:#3A2B12; --bad:#F2928A; --bad-soft:#3D1D1B; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55}
+*{box-sizing:border-box}
+h1,h2,h3{margin:0;text-wrap:balance;line-height:1.3}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:7px 14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:4px 10px;font-size:13px}
+.field{display:grid;gap:5px}
+.field label{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.input{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:8px 10px}
+textarea.input{resize:vertical;min-height:120px;line-height:1.6}
+.hint{font-size:12px;color:var(--muted)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.mute{background:var(--surface-2);color:var(--muted)}
+.pill.acc{background:var(--accent-soft);color:var(--accent)}
+.demo-tag{font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--warn);background:var(--warn-soft);padding:2px 7px;border-radius:4px}
+
+/* 로그인 */
+#login{min-height:100%;display:grid;place-items:center;padding-block:40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.login-card{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:32px 28px;display:grid;gap:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:var(--accent);display:grid;place-items:center}
+.brand-mark svg{width:18px;height:18px}
+.login-card h1{font-size:22px}
+.login-card p{margin:0;color:var(--muted)}
+.err{color:var(--bad);font-size:13px}
+
+/* 앱 셸 */
+#app{height:100%;display:grid;grid-template-columns:220px 1fr}
+.side{background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:4px;padding:18px 12px;min-width:0}
+.side .brand{padding:0 8px 14px}
+.nav-group{font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--muted);padding:14px 10px 4px}
+.nav{display:flex;align-items:center;gap:10px;border:0;background:none;padding:8px 10px;border-radius:6px;cursor:pointer;text-align:left;width:100%;color:var(--fg)}
+.nav:hover{background:var(--surface-2)}
+.nav.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.nav svg{width:17px;height:17px;flex:none}
+.nav .count{margin-left:auto;font-size:12px;font-family:var(--mono);color:var(--muted)}
+.nav.on .count{color:var(--accent)}
+.nav .count.hot{background:var(--warn);color:var(--surface);border-radius:999px;padding:0 7px;font-weight:600}
+.side-foot{margin-top:auto;border-top:1px solid var(--line);padding:12px 8px 0;display:grid;gap:6px;font-size:12.5px}
+.acct-line{display:flex;align-items:center;gap:6px;min-width:0}
+.acct-line span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
+.dot.ok{background:var(--ok)}
+
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface)}
+.topbar h2{font-size:18px}
+.topbar .sub{color:var(--muted);font-size:13px}
+.topbar .spacer{flex:1}
+.view{flex:1;min-height:0;overflow:auto}
+.split{display:grid;grid-template-columns:minmax(280px,380px) 1fr;height:100%;min-height:0}
+.list{border-right:1px solid var(--line);overflow:auto;background:var(--surface);min-width:0}
+.row{display:grid;gap:3px;padding:12px 16px;border-bottom:1px solid var(--line);cursor:pointer;border-left:3px solid transparent;background:none;width:100%;text-align:left;border-top:0;border-right:0}
+.row:hover{background:var(--surface-2)}
+.row.sel{background:var(--accent-soft);border-left-color:var(--accent)}
+.row-top{display:flex;align-items:center;gap:8px;min-width:0}
+.row-from{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.row-time{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.row-subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
+.row.unread .row-subj{font-weight:600}
+.empty{padding:40px 24px;color:var(--muted);text-align:center}
+
+.detail{overflow:auto;padding:24px;min-width:0;display:grid;gap:18px;align-content:start}
+.d-head{display:grid;gap:6px}
+.d-head h3{font-size:19px}
+.d-from{color:var(--muted);font-size:13px;display:flex;gap:8px;flex-wrap:wrap}
+.mailbody{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;line-height:1.7;overflow-wrap:anywhere}
+.mailbody mark{background:var(--warn-soft);color:var(--warn);border-radius:3px;padding:0 2px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.panel-h{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);font-weight:600;font-size:13px}
+.panel-b{padding:14px 16px;display:grid;gap:12px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.kv div{display:grid;gap:2px}
+.kv dt{font-size:11.5px;color:var(--muted);font-weight:600}
+.kv dd{margin:0;font-weight:500}
+.meter{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;margin-top:4px}
+.meter i{display:block;height:100%;background:var(--accent)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.flow b{color:var(--fg);font-weight:600}
+
+/* 규칙 */
+.rules-wrap{padding:24px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);gap:24px;align-items:start}
+.rule-list{display:grid;gap:10px}
+.rule{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:grid;gap:10px}
+.rule.off{opacity:.55}
+.rule-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rule-h h4{margin:0;font-size:15px}
+.prio{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 6px}
+.chips{display:flex;gap:5px;flex-wrap:wrap}
+.chip{font-size:12.5px;background:var(--surface-2);border-radius:4px;padding:1px 8px}
+.rule-tpl{font-size:13px;color:var(--muted);white-space:pre-wrap;max-height:3.2em;overflow:hidden;border-left:2px solid var(--line);padding-left:10px}
+.switch{position:relative;width:36px;height:20px;flex:none}
+.switch input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.switch span{position:absolute;inset:0;background:var(--line);border-radius:999px;transition:background .15s}
+.switch span::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;background:var(--surface);border-radius:50%;transition:transform .15s}
+.switch input:checked+span{background:var(--ok)}
+.switch input:checked+span::after{transform:translateX(16px)}
+.switch input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.form{display:grid;gap:14px}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg label{flex:1;text-align:center;padding:7px 8px;cursor:pointer;font-size:13px;border-right:1px solid var(--line)}
+.seg label:last-child{border-right:0}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg input:checked+span{color:var(--accent);font-weight:600}
+.seg label:has(input:checked){background:var(--accent-soft)}
+.vars{display:flex;gap:5px;flex-wrap:wrap}
+.vars button{font-family:var(--mono);font-size:12px;border:1px dashed var(--line);background:none;border-radius:4px;padding:1px 7px;cursor:pointer}
+.test-out{font-size:13px;display:grid;gap:6px}
+
+/* 계정 */
+.acct-wrap{padding:24px;max-width:760px;display:grid;gap:20px}
+.providers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.prov{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:12px;cursor:pointer;text-align:left;display:grid;gap:2px}
+.prov b{font-size:14px}
+.prov small{color:var(--muted);font-size:12px}
+.prov.on{border-color:var(--accent);background:var(--accent-soft)}
+.steps{display:flex;gap:0;flex-wrap:wrap;font-size:13px}
+.step{display:flex;align-items:center;gap:8px;padding-right:18px;color:var(--muted)}
+.step i{font-style:normal;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-family:var(--mono);font-size:12px}
+.step.done{color:var(--ok)} .step.done i{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.step.cur{color:var(--fg);font-weight:600} .step.cur i{border-color:var(--accent);color:var(--accent)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.status-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.status-list li{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
+
+.m-only{display:none}
+.back{justify-self:start}
+#ruleForm{scroll-margin-top:70px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:8px;font-size:13.5px;max-width:calc(100% - 32px);z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+
+@media (max-width:860px){
+  html,body{height:auto}
+  #app{display:block;height:auto;min-height:100%}
+  body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:13;background:var(--surface)}
+  .side{position:fixed;left:0;right:0;bottom:0;z-index:15;flex-direction:row;gap:0;border-right:0;border-top:1px solid var(--line);
+    padding:4px max(4px,env(safe-area-inset-right,0px)) calc(4px + env(safe-area-inset-bottom,0px)) max(4px,env(safe-area-inset-left,0px))}
+  .side .brand,.nav-group,.side-foot{display:none}
+  .nav{flex:1;flex-direction:column;justify-content:center;gap:3px;width:auto;min-height:54px;padding:6px 2px;font-size:11.5px;position:relative;text-align:center;color:var(--muted)}
+  .nav.on{background:none;color:var(--accent)}
+  .nav svg{width:22px;height:22px}
+  .nav .full{display:none}
+  .nav .count{position:absolute;top:3px;left:calc(50% + 7px);margin:0;font-size:10.5px;line-height:16px;min-width:16px;padding:0 5px;border-radius:999px;background:var(--surface-2)}
+  .nav .count:empty{display:none}
+  .nav .count.hot{padding:0 5px}
+  .main{padding-bottom:calc(66px + env(safe-area-inset-bottom,0px))}
+  .topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:12;gap:8px;flex-wrap:nowrap;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px))}
+  .topbar h2{font-size:17px}
+  .topbar .sub,.topbar .demo-tag,#simBtn .full{display:none}
+  .view{overflow:visible}
+  .split{display:block;height:auto}
+  .list{border:0;max-height:none;overflow:visible}
+  .row{padding:14px 16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .split .detail{display:none}
+  .split.show-detail .list{display:none}
+  .split.show-detail .detail{display:grid}
+  .detail,.rules-wrap,.acct-wrap{padding:16px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px))}
+  .detail{gap:14px}
+  .d-head h3{font-size:18px}
+  .mailbody{padding:14px}
+  .rules-wrap{grid-template-columns:1fr;gap:18px}
+  .kv{grid-template-columns:1fr 1fr}
+  .m-only{display:flex}
+  .input{font-size:16px}
+  .btn{min-height:42px}
+  .btn.sm{min-height:36px}
+  .actions .btn.primary{flex:1}
+  .seg label{padding:10px 6px}
+  .toast{bottom:calc(78px + env(safe-area-inset-bottom,0px))}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<style>:root{color-scheme:light} body{margin:0} [hidden]{display:none!important} img{max-width:100%}</style>
+</head>
+<body>
+
+<!-- ───────── 로그인 ───────── -->
+<section id="login">
+  <form class="login-card" id="loginForm" novalidate>
+    <div class="brand"><div class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div>답장도우미</div>
+    <div style="display:grid;gap:6px">
+      <h1>로그인</h1>
+      <p>받은 메일을 AI가 분석하고, 등록한 규칙에 맞춰 답장을 준비합니다.</p>
+    </div>
+    <div class="field"><label for="lgId">아이디(이메일)</label><input class="input" id="lgId" type="email" value="demo@company.co.kr" autocomplete="username"></div>
+    <div class="field"><label for="lgPw">비밀번호</label><input class="input" id="lgPw" type="password" value="demo1234" autocomplete="current-password"></div>
+    <div class="err" id="lgErr" hidden></div>
+    <button class="btn primary" type="submit" style="padding:10px">로그인</button>
+    <div class="hint">준호.com · 화면 시연용 프로토타입입니다. 아무 이메일과 4자 이상 비밀번호로 들어갈 수 있고, 실제 메일은 보내지지 않습니다.</div>
+  </form>
+</section>
+
+<!-- ───────── 앱 ───────── -->
+<div id="app" hidden>
+  <nav class="side" aria-label="메뉴">
+    <div class="brand"><div class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="var(--on-accent)" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></div>답장도우미</div>
+    <div class="nav-group">메일</div>
+    <button class="nav" data-view="inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5 5h14l2 8v6H3v-6z"/></svg><span class="lbl">수신함</span><span class="count" id="cInbox"></span></button>
+    <button class="nav" data-view="review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/></svg><span class="lbl">검증함</span><span class="count" id="cReview"></span></button>
+    <button class="nav" data-view="sent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 3 10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></svg><span class="lbl">발신함</span><span class="count" id="cSent"></span></button>
+    <div class="nav-group">설정</div>
+    <button class="nav" data-view="rules"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h10M4 12h6M4 18h12"/><circle cx="18" cy="6" r="2"/><circle cx="14" cy="12" r="2"/><circle cx="20" cy="18" r="2"/></svg><span class="lbl"><span class="full">AI 분석 </span>규칙</span><span class="count" id="cRules"></span></button>
+    <button class="nav" data-view="account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="lbl"><span class="full">내 메일 </span>인증</span></button>
+    <div class="side-foot">
+      <div class="acct-line"><i class="dot" id="acctDot"></i><span id="acctLabel">연동된 메일 없음</span></div>
+      <div class="acct-line" style="color:var(--muted)"><span id="userLabel"></span></div>
+      <button class="btn sm" id="logout" type="button">로그아웃</button>
+    </div>
+  </nav>
+
+  <main class="main">
+    <header class="topbar">
+      <div style="display:grid;gap:1px;min-width:0"><h2 id="vTitle"></h2><span class="sub" id="vSub"></span></div>
+      <span class="spacer"></span>
+      <span class="demo-tag">예시 데이터</span>
+      <button class="btn" id="simBtn" type="button">새 메일 받기<span class="full"> (시연)</span></button>
+    </header>
+    <div class="view" id="view"></div>
+  </main>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let uid = 100;
+const isM = () => matchMedia('(max-width:860px)').matches;
+
+/* ───── 상태 (예시) ───── */
+const S = {
+  user: null,
+  view: 'inbox',
+  detailOpen: false,
+  sel: { inbox: null, review: null, sent: null },
+  editRule: null,
+  account: { provider: 'gmail', email: 'support@company.co.kr', step: 3, code: null, verifiedAt: '2026-10-15 09:12', autoSend: true, signature: '고객지원팀 김지원 드림' },
+  rules: [
+    { id: 1, name: '배송 문의', keywords: ['배송', '도착', '송장', '택배'], match: 'any', sender: '', mode: 'review', priority: 1, on: true,
+      template: '안녕하세요 {{이름}}님,\n\n문의하신 "{{제목}}" 건 확인했습니다.\n주문하신 상품은 현재 배송 중이며, 송장번호는 확인 후 다시 안내드리겠습니다.\n\n{{서명}}' },
+    { id: 2, name: '환불·반품 요청', keywords: ['환불', '반품', '취소'], match: 'any', sender: '', mode: 'review', priority: 2, on: true,
+      template: '안녕하세요 {{이름}}님,\n\n불편을 드려 죄송합니다. 환불·반품 접수를 도와드리겠습니다.\n주문번호와 사유를 회신해 주시면 영업일 기준 1~2일 안에 처리 결과를 안내드립니다.\n\n{{서명}}' },
+    { id: 3, name: '견적 요청', keywords: ['견적', '단가', '가격표'], match: 'any', sender: '', mode: 'auto', priority: 3, on: true,
+      template: '안녕하세요 {{이름}}님,\n\n견적 문의 감사합니다. 최신 단가표를 첨부해 드리며, 수량별 상세 견적은 담당자가 오늘 안에 연락드리겠습니다.\n\n{{서명}}' },
+    { id: 4, name: '미팅 일정 조율', keywords: ['미팅', '회의', '일정'], match: 'any', sender: '@partner.kr', mode: 'review', priority: 4, on: true,
+      template: '안녕하세요 {{이름}}님,\n\n미팅 제안 감사합니다. 다음 주 화·목 오후 2~5시 중 편하신 시간을 알려주시면 일정 잡겠습니다.\n\n{{서명}}' },
+    { id: 5, name: '채용 지원서 접수', keywords: ['지원서', '이력서', '채용'], match: 'any', sender: '', mode: 'auto', priority: 5, on: false,
+      template: '안녕하세요 {{이름}}님,\n\n지원해 주셔서 감사합니다. 서류 검토 후 2주 안에 결과를 안내드리겠습니다.\n\n{{서명}}' },
+  ],
+  mails: [],
+};
+const seed = [
+  { from: '박서연', addr: 'seoyeon.park@gmail.com', subj: '주문한 상품 언제 도착하나요?', time: '10-17 09:42',
+    body: '안녕하세요.\n10월 12일에 주문했는데 아직 배송 시작 안내를 못 받았어요.\n언제쯤 도착하는지, 송장번호도 알 수 있을까요?\n\n박서연 드림' },
+  { from: '(주)한빛상사 구매팀', addr: 'buy@hanbit-trade.com', subj: 'A4 복사용지 대량 견적 요청드립니다', time: '10-17 09:15',
+    body: '안녕하세요, 한빛상사 구매팀입니다.\nA4 복사용지 500박스 기준 단가와 견적서를 받아볼 수 있을까요?\n납품은 11월 첫 주를 희망합니다.' },
+  { from: '이도현', addr: 'dohyun.lee@naver.com', subj: '제품 불량으로 환불 요청합니다', time: '10-17 08:51',
+    body: '받은 제품 전원이 들어오지 않습니다. 정말 실망스럽네요.\n환불 처리 부탁드립니다. 주문번호는 20261009-3381 입니다.' },
+  { from: '최민준', addr: 'minjun@partner.kr', subj: '다음 주 협력사 미팅 일정 문의', time: '10-16 17:30',
+    body: '안녕하세요, 파트너사 최민준입니다.\n4분기 공급 계획 관련해 다음 주 중 미팅 일정 잡고 싶습니다.\n가능한 시간 알려주세요.' },
+  { from: '뉴스레터', addr: 'news@weekly-biz.com', subj: '[주간 비즈] 10월 셋째 주 업계 동향', time: '10-16 07:00',
+    body: '이번 주 주요 소식을 정리했습니다.\n1. 물류비 상승 추세\n2. 연말 프로모션 준비 체크리스트' },
+];
+const pool = [
+  { from: '정하은', addr: 'haeun.j@kakao.com', subj: '택배가 다른 주소로 간 것 같아요', body: '배송 완료로 나오는데 받은 게 없어요. 택배 기사님 연락처나 송장 확인 부탁드립니다.' },
+  { from: '그린오피스 김대리', addr: 'kim@greenoffice.co.kr', subj: '사무용품 가격표 요청', body: '안녕하세요. 사무용품 전체 가격표와 단가 받아볼 수 있을까요? 분기별로 정기 구매 예정입니다.' },
+  { from: '윤재희', addr: 'jaehee.yoon@gmail.com', subj: '주문 취소 가능할까요?', body: '어제 주문한 건 아직 발송 전이면 취소하고 싶습니다. 환불은 카드로 부탁드려요.' },
+  { from: '한지민', addr: 'jimin.han@outlook.com', subj: '매장 영업시간이 궁금합니다', body: '이번 주말에 방문하려는데 토요일에도 영업하시나요?' },
+  { from: '오세훈', addr: 'sehoon@partner.kr', subj: '신제품 소개 회의 요청', body: '신제품 라인업 소개를 위해 30분 정도 회의 시간을 부탁드립니다. 다음 주 일정 어떠세요?' },
+];
+let poolIdx = 0;
+
+/* ───── AI 분석 (시연용 규칙 매칭) ───── */
+const NEG = ['실망', '불량', '화가', '최악', '불편', '안 들어', '못 받'];
+function analyze(m) {
+  const text = (m.subj + '\n' + m.body);
+  const cands = [];
+  for (const r of S.rules) {
+    if (!r.on) continue;
+    if (r.sender && !m.addr.toLowerCase().includes(r.sender.toLowerCase())) continue;
+    const hits = r.keywords.filter(k => text.includes(k));
+    const ok = r.match === 'all' ? hits.length === r.keywords.length : hits.length > 0;
+    if (ok) cands.push({ r, hits });
+  }
+  cands.sort((a, b) => a.r.priority - b.r.priority);
+  const best = cands[0];
+  const neg = NEG.filter(w => text.includes(w));
+  return {
+    ruleId: best ? best.r.id : null,
+    hits: best ? best.hits : [],
+    others: cands.slice(1).map(c => c.r.name),
+    confidence: best ? Math.min(97, 62 + best.hits.length * 11 + (best.r.sender ? 8 : 0)) : 0,
+    sentiment: neg.length ? '부정' : '중립',
+    urgency: neg.length || /빨리|급|오늘/.test(text) ? '높음' : '보통',
+  };
+}
+function fill(tpl, m) {
+  return tpl.replaceAll('{{이름}}', m.from).replaceAll('{{제목}}', m.subj)
+    .replaceAll('{{보낸주소}}', m.addr).replaceAll('{{서명}}', S.account.signature);
+}
+function nowStr() { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function rule(id) { return S.rules.find(r => r.id === id); }
+
+function process(m) {
+  m.ai = analyze(m);
+  const r = m.ai.ruleId && rule(m.ai.ruleId);
+  if (!r) { m.status = 'nomatch'; return; }
+  m.draft = fill(r.template, m);
+  if (r.mode === 'auto' && S.account.autoSend && S.account.step === 3) {
+    m.status = 'sent'; m.sentAt = m.time; m.sentBy = '자동 발송';
+  } else m.status = 'pending';
+}
+seed.forEach(s => { const m = { id: ++uid, unread: true, ...s }; process(m); S.mails.push(m); });
+S.mails[1].unread = false; S.mails[4].unread = false;
+
+/* ───── 공통 ───── */
+const STATUS = {
+  pending: ['warn', '검증 대기'], sent: ['ok', '발송 완료'], nomatch: ['mute', '규칙 없음'], rejected: ['bad', '보류'],
+};
+const pill = st => `<span class="pill ${STATUS[st][0]}">${STATUS[st][1]}</span>`;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => el.hidden = true, 2600); }
+function counts() {
+  const p = S.mails.filter(m => m.status === 'pending').length;
+  $('#cInbox').textContent = S.mails.filter(m => m.unread).length || '';
+  const cr = $('#cReview'); cr.textContent = p || ''; cr.classList.toggle('hot', p > 0);
+  $('#cSent').textContent = S.mails.filter(m => m.status === 'sent').length;
+  $('#cRules').textContent = S.rules.filter(r => r.on).length;
+  const ok = S.account.step === 3;
+  $('#acctDot').className = 'dot' + (ok ? ' ok' : '');
+  $('#acctLabel').textContent = ok ? S.account.email : '연동된 메일 없음';
+}
+function highlight(text, hits) {
+  let h = esc(text);
+  hits.forEach(k => { h = h.split(esc(k)).join(`<mark>${esc(k)}</mark>`); });
+  return h;
+}
+
+/* ───── 화면 ───── */
+const VIEWS = {
+  inbox: ['수신함', () => `${S.account.email} · 받은 메일을 AI가 분석한 결과`],
+  review: ['검증함', () => 'AI가 작성한 답장을 확인하고 발송하세요'],
+  sent: ['발신함', () => '자동 발송과 검증 후 발송된 답장'],
+  rules: ['AI 분석 규칙', () => '메일에 어떤 내용이 있으면 어떤 답장을 보낼지 등록합니다'],
+  account: ['내 메일 인증', () => '답장을 받고 보낼 메일 계정을 연결합니다'],
+};
+function go(v, open = false) {
+  S.view = v; S.detailOpen = open; window.scrollTo(0, 0);
+  document.querySelectorAll('.nav').forEach(n => n.classList.toggle('on', n.dataset.view === v));
+  $('#vTitle').textContent = VIEWS[v][0]; $('#vSub').textContent = VIEWS[v][1]();
+  $('#simBtn').hidden = v === 'account';
+  render(); counts();
+}
+function render() { ({ inbox: rInbox, review: rReview, sent: rSent, rules: rRules, account: rAccount })[S.view](); }
+
+function listHtml(items, key, meta) {
+  if (!items.length) return `<div class="empty">표시할 메일이 없습니다.</div>`;
+  return items.map(m => `<button class="row ${m.unread && key === 'inbox' ? 'unread' : ''} ${S.sel[key] === m.id ? 'sel' : ''}" data-id="${m.id}" type="button">
+    <div class="row-top"><span class="row-from">${esc(m.from)}</span><span class="row-time">${esc(key === 'sent' ? m.sentAt : m.time)}</span></div>
+    <div class="row-subj">${key === 'sent' ? 'Re: ' : ''}${esc(m.subj)}</div>
+    <div class="row-meta">${meta(m)}</div></button>`).join('');
+}
+function bindRows(key) {
+  document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { S.detailOpen = false; render(); });
+  document.querySelectorAll('.list .row').forEach(b => b.onclick = () => {
+    S.sel[key] = +b.dataset.id; S.detailOpen = true; if (isM()) window.scrollTo(0, 0); const m = S.mails.find(x => x.id === S.sel[key]); if (key === 'inbox') m.unread = false; render(); counts();
+  });
+}
+function aiPanel(m) {
+  const r = m.ai.ruleId && rule(m.ai.ruleId);
+  return `<div class="panel"><div class="panel-h">AI 분석 결과 <span class="spacer" style="flex:1"></span>${pill(m.status)}</div>
+    <div class="panel-b">
+      <dl class="kv" style="margin:0">
+        <div><dt>매칭된 규칙</dt><dd>${r ? esc(r.name) : '<span style="color:var(--muted)">없음</span>'}</dd></div>
+        <div><dt>처리 방식</dt><dd>${r ? (r.mode === 'auto' ? '자동 발송' : '검증 후 발송') : '직접 확인 필요'}</dd></div>
+        <div><dt>감정 · 긴급도</dt><dd>${m.ai.sentiment} · ${m.ai.urgency}</dd></div>
+        <div><dt>신뢰도</dt><dd class="mono">${r ? m.ai.confidence + '%' : '—'}<div class="meter"><i style="width:${m.ai.confidence}%"></i></div></dd></div>
+      </dl>
+      ${m.ai.hits.length ? `<div class="flow">감지된 키워드 <span class="chips">${m.ai.hits.map(k => `<span class="chip">${esc(k)}</span>`).join('')}</span></div>` : ''}
+      ${m.ai.others.length ? `<div class="hint">함께 맞은 규칙: ${m.ai.others.map(esc).join(', ')} (우선순위가 낮아 제외)</div>` : ''}
+      <div class="flow"><b>수신</b> → <b>AI 분석</b> → ${r ? (m.status === 'sent' ? '<b>발신함</b>' : '<b>검증함</b>') : '<b>직접 처리</b>'}</div>
+      <div class="actions">
+        ${m.status === 'pending' ? `<button class="btn primary sm" data-act="toReview">검증함에서 보기</button>` : ''}
+        ${m.status === 'sent' ? `<button class="btn sm" data-act="toSent">보낸 답장 보기</button>` : ''}
+        ${m.status === 'nomatch' ? `<button class="btn primary sm" data-act="makeRule">이 메일로 규칙 만들기</button>` : ''}
+        <button class="btn sm" data-act="reanalyze">다시 분석</button>
+      </div>
+    </div></div>`;
+}
+function rInbox() {
+  const items = S.mails;
+  if (!S.sel.inbox && items[0]) S.sel.inbox = items[0].id;
+  const m = items.find(x => x.id === S.sel.inbox);
+  const r = m && m.ai.ruleId && rule(m.ai.ruleId);
+  $('#view').innerHTML = `<div class="split ${S.detailOpen ? 'show-detail' : ''}"><div class="list">${listHtml(items, 'inbox', m => {
+      const rr = m.ai.ruleId && rule(m.ai.ruleId);
+      return pill(m.status) + (rr ? `<span class="pill acc">${esc(rr.name)}</span>` : '');
+    })}</div>
+    <div class="detail"><button class="btn sm m-only back" type="button" data-back>← 목록</button>${m ? `
+      <div class="d-head"><h3>${esc(m.subj)}</h3><div class="d-from"><span>${esc(m.from)} &lt;${esc(m.addr)}&gt;</span><span class="mono">${esc(m.time)}</span></div></div>
+      ${aiPanel(m)}
+      <div class="mailbody">${highlight(m.body, m.ai.hits)}</div>` : '<div class="empty">메일을 선택하세요.</div>'}</div></div>`;
+  bindRows('inbox');
+  document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
+    const a = b.dataset.act;
+    if (a === 'toReview') { S.sel.review = m.id; go('review', true); }
+    if (a === 'toSent') { S.sel.sent = m.id; go('sent', true); }
+    if (a === 'reanalyze') { if (m.status !== 'sent') { process(m); toast('다시 분석했습니다: ' + (m.ai.ruleId ? rule(m.ai.ruleId).name : '맞는 규칙 없음')); } else toast('이미 발송된 메일은 다시 분석하지 않습니다.'); render(); counts(); }
+    if (a === 'makeRule') { S.editRule = { id: null, name: '', keywords: [], match: 'any', sender: '', mode: 'review', priority: S.rules.length + 1, on: true, template: '안녕하세요 {{이름}}님,\n\n\n\n{{서명}}', fromMail: m.subj }; go('rules'); }
+  });
+}
+
+function rReview() {
+  const items = S.mails.filter(m => m.status === 'pending');
+  if (!items.find(x => x.id === S.sel.review)) S.sel.review = items[0] ? items[0].id : null;
+  const m = items.find(x => x.id === S.sel.review);
+  const r = m && rule(m.ai.ruleId);
+  $('#view').innerHTML = `<div class="split ${S.detailOpen ? 'show-detail' : ''}"><div class="list">${listHtml(items, 'review', m => `<span class="pill acc">${esc(rule(m.ai.ruleId).name)}</span><span class="pill mute mono">${m.ai.confidence}%</span>${m.ai.sentiment === '부정' ? '<span class="pill bad">부정 감정</span>' : ''}`)}</div>
+    <div class="detail"><button class="btn sm m-only back" type="button" data-back>← 목록</button>${m ? `
+      <div class="d-head"><h3>Re: ${esc(m.subj)}</h3><div class="d-from"><span>받는 사람 ${esc(m.from)} &lt;${esc(m.addr)}&gt;</span><span>규칙 <b>${esc(r.name)}</b> · 신뢰도 <span class="mono">${m.ai.confidence}%</span></span></div></div>
+      <div class="panel"><div class="panel-h">AI가 작성한 답장 <span style="flex:1"></span><span class="hint" style="font-weight:400">보내기 전에 고칠 수 있습니다</span></div>
+        <div class="panel-b">
+          <div class="field"><label for="draft">답장 내용</label><textarea class="input" id="draft" rows="10">${esc(m.draft)}</textarea></div>
+          <div class="actions">
+            <button class="btn primary" id="approve" type="button">승인하고 보내기</button>
+            <button class="btn" id="regen" type="button">규칙 템플릿으로 되돌리기</button>
+            <span style="flex:1"></span>
+            <button class="btn danger" id="hold" type="button">보내지 않고 보류</button>
+          </div>
+        </div></div>
+      <div class="panel"><div class="panel-h">원본 메일</div><div class="panel-b"><div class="mailbody" style="border:0;padding:0">${highlight(m.body, m.ai.hits)}</div></div></div>`
+      : '<div class="empty">검증할 답장이 없습니다. 검증 후 발송 규칙에 맞는 메일이 들어오면 여기에 쌓입니다.</div>'}</div></div>`;
+  bindRows('review');
+  if (!m) return;
+  const ta = $('#draft');
+  ta.oninput = () => m.draft = ta.value;
+  $('#approve').onclick = () => { m.draft = ta.value; m.status = 'sent'; m.sentAt = nowStr(); m.sentBy = '검증 후 발송'; S.detailOpen = false; toast(`${m.from}님에게 답장을 보냈습니다. (시연: 실제 발송 없음)`); render(); counts(); };
+  $('#regen').onclick = () => { m.draft = fill(r.template, m); render(); };
+  $('#hold').onclick = () => { m.status = 'rejected'; S.detailOpen = false; toast('보류했습니다. 수신함에서 다시 분석할 수 있습니다.'); render(); counts(); };
+}
+
+function rSent() {
+  const items = S.mails.filter(m => m.status === 'sent').sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+  if (!items.find(x => x.id === S.sel.sent)) S.sel.sent = items[0] ? items[0].id : null;
+  const m = items.find(x => x.id === S.sel.sent);
+  $('#view').innerHTML = `<div class="split ${S.detailOpen ? 'show-detail' : ''}"><div class="list">${listHtml(items, 'sent', m => `<span class="pill ${m.sentBy === '자동 발송' ? 'acc' : 'ok'}">${m.sentBy}</span><span class="pill mute">${esc(rule(m.ai.ruleId).name)}</span>`)}</div>
+    <div class="detail"><button class="btn sm m-only back" type="button" data-back>← 목록</button>${m ? `
+      <div class="d-head"><h3>Re: ${esc(m.subj)}</h3><div class="d-from"><span>받는 사람 ${esc(m.from)} &lt;${esc(m.addr)}&gt;</span><span class="mono">${esc(m.sentAt)}</span><span class="pill ${m.sentBy === '자동 발송' ? 'acc' : 'ok'}">${m.sentBy}</span></div></div>
+      <div class="mailbody">${esc(m.draft)}</div>
+      <div class="panel"><div class="panel-h">답장한 원본 메일 · ${esc(m.time)}</div><div class="panel-b"><div class="mailbody" style="border:0;padding:0;color:var(--muted)">${esc(m.body)}</div></div></div>`
+      : '<div class="empty">아직 보낸 답장이 없습니다.</div>'}</div></div>`;
+  bindRows('sent');
+}
+
+function rRules() {
+  const e = S.editRule;
+  $('#view').innerHTML = `<div class="rules-wrap">
+    <div style="display:grid;gap:12px;min-width:0">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="hint" style="flex:1">숫자가 작을수록 먼저 적용됩니다. 여러 규칙이 맞으면 우선순위가 높은 규칙 하나만 씁니다.</span><button class="btn primary" id="newRule" type="button">+ 규칙 추가</button></div>
+      <div class="rule-list">${S.rules.slice().sort((a, b) => a.priority - b.priority).map(r => `
+        <article class="rule ${r.on ? '' : 'off'}">
+          <div class="rule-h"><span class="prio">${r.priority}</span><h4>${esc(r.name)}</h4>
+            <span class="pill ${r.mode === 'auto' ? 'acc' : 'warn'}">${r.mode === 'auto' ? '자동 발송' : '검증 후 발송'}</span>
+            <span style="flex:1"></span>
+            <label class="switch" title="사용"><input type="checkbox" data-tog="${r.id}" ${r.on ? 'checked' : ''} aria-label="${esc(r.name)} 사용"><span></span></label>
+            <button class="btn sm" data-edit="${r.id}" type="button">수정</button></div>
+          <div class="flow"><b>조건</b> 내용에 ${r.match === 'all' ? '모두 포함' : '하나라도 포함'} <span class="chips">${r.keywords.map(k => `<span class="chip">${esc(k)}</span>`).join('')}</span>${r.sender ? ` · 보낸 주소에 <span class="chip mono">${esc(r.sender)}</span>` : ''}</div>
+          <div class="rule-tpl">${esc(r.template)}</div>
+        </article>`).join('')}</div>
+    </div>
+    <div style="display:grid;gap:16px;min-width:0">
+      ${e ? ruleForm(e) : `<div class="panel"><div class="panel-h">규칙 편집</div><div class="panel-b"><span class="hint">규칙을 추가하거나 목록에서 수정을 누르세요.</span></div></div>`}
+      <div class="panel"><div class="panel-h">규칙 테스트</div><div class="panel-b">
+        <div class="field"><label for="tText">메일 내용을 붙여넣어 보세요</label><textarea class="input" id="tText" rows="4" style="min-height:90px">지난주에 주문한 상품을 취소하고 환불받고 싶어요.</textarea></div>
+        <div class="field"><label for="tAddr">보낸 주소</label><input class="input mono" id="tAddr" value="customer@gmail.com"></div>
+        <div class="test-out" id="tOut"></div>
+      </div></div>
+    </div></div>`;
+  document.querySelectorAll('[data-tog]').forEach(c => c.onchange = () => { rule(+c.dataset.tog).on = c.checked; toast(`${rule(+c.dataset.tog).name} 규칙을 ${c.checked ? '켰습니다' : '껐습니다'}.`); render(); counts(); });
+  document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { S.editRule = { ...rule(+b.dataset.edit), keywords: [...rule(+b.dataset.edit).keywords] }; render(); $('#ruleForm').scrollIntoView(); });
+  $('#newRule').onclick = () => { S.editRule = { id: null, name: '', keywords: [], match: 'any', sender: '', mode: 'review', priority: S.rules.length + 1, on: true, template: '안녕하세요 {{이름}}님,\n\n\n\n{{서명}}' }; render(); $('#fName').focus(); };
+  const runTest = () => {
+    const res = analyze({ subj: '', body: $('#tText').value, addr: $('#tAddr').value });
+    const r = res.ruleId && rule(res.ruleId);
+    $('#tOut').innerHTML = r
+      ? `<div class="flow"><b>결과</b> <span class="pill acc">${esc(r.name)}</span> <span class="pill ${r.mode === 'auto' ? 'acc' : 'warn'}">${r.mode === 'auto' ? '바로 발신함으로' : '검증함으로'}</span> <span class="mono">${res.confidence}%</span></div><div class="hint">감지 키워드: ${res.hits.map(esc).join(', ')}${res.others.length ? ' · 함께 맞은 규칙: ' + res.others.map(esc).join(', ') : ''}</div>`
+      : `<div class="flow"><b>결과</b> <span class="pill mute">맞는 규칙 없음</span></div><div class="hint">이 메일은 수신함에 남고 답장은 직접 작성해야 합니다.</div>`;
+  };
+  $('#tText').oninput = runTest; $('#tAddr').oninput = runTest; runTest();
+  if (e) bindForm(e);
+}
+function ruleForm(e) {
+  return `<form class="panel" id="ruleForm" novalidate><div class="panel-h">${e.id ? '규칙 수정' : '새 규칙'}${e.fromMail ? ` <span class="hint" style="font-weight:400">· "${esc(e.fromMail)}" 메일 기준</span>` : ''}</div>
+    <div class="panel-b form">
+      <div class="field"><label for="fName">규칙 이름</label><input class="input" id="fName" value="${esc(e.name)}" placeholder="예: 영업시간 문의"></div>
+      <div class="field"><label for="fKw">이런 단어가 메일에 있으면</label><input class="input" id="fKw" value="${esc(e.keywords.join(', '))}" placeholder="쉼표로 구분: 영업시간, 몇 시, 주말"><span class="hint">제목과 본문에서 찾습니다.</span></div>
+      <div class="field"><label>조건 방식</label><div class="seg">
+        <label><input type="radio" name="fMatch" value="any" ${e.match === 'any' ? 'checked' : ''}><span>하나라도 포함</span></label>
+        <label><input type="radio" name="fMatch" value="all" ${e.match === 'all' ? 'checked' : ''}><span>모두 포함</span></label></div></div>
+      <div class="grid2">
+        <div class="field"><label for="fSender">보낸 주소 조건 (선택)</label><input class="input mono" id="fSender" value="${esc(e.sender)}" placeholder="@partner.kr"></div>
+        <div class="field"><label for="fPrio">우선순위</label><input class="input mono" id="fPrio" type="number" min="1" value="${e.priority}"></div>
+      </div>
+      <div class="field"><label>답장 처리</label><div class="seg">
+        <label><input type="radio" name="fMode" value="review" ${e.mode === 'review' ? 'checked' : ''}><span>검증함에서 확인 후 발송</span></label>
+        <label><input type="radio" name="fMode" value="auto" ${e.mode === 'auto' ? 'checked' : ''}><span>바로 자동 발송</span></label></div></div>
+      <div class="field"><label for="fTpl">보낼 답장</label><textarea class="input" id="fTpl" rows="7">${esc(e.template)}</textarea>
+        <div class="vars"><span class="hint">넣기:</span>${['{{이름}}', '{{제목}}', '{{보낸주소}}', '{{서명}}'].map(v => `<button type="button" data-var="${v}">${v}</button>`).join('')}</div></div>
+      <div class="err" id="fErr" hidden></div>
+      <div class="actions"><button class="btn primary" type="submit">${e.id ? '변경 저장' : '규칙 등록'}</button><button class="btn" type="button" id="fCancel">취소</button>
+        ${e.id ? '<span style="flex:1"></span><button class="btn danger" type="button" id="fDel">삭제</button>' : ''}</div>
+    </div></form>`;
+}
+function bindForm(e) {
+  const tpl = $('#fTpl');
+  document.querySelectorAll('[data-var]').forEach(b => b.onclick = () => {
+    const s = tpl.selectionStart, v = b.dataset.var; tpl.value = tpl.value.slice(0, s) + v + tpl.value.slice(tpl.selectionEnd); tpl.focus(); tpl.selectionStart = tpl.selectionEnd = s + v.length;
+  });
+  $('#fCancel').onclick = () => { S.editRule = null; render(); };
+  if ($('#fDel')) $('#fDel').onclick = () => { S.rules = S.rules.filter(r => r.id !== e.id); S.editRule = null; toast('규칙을 삭제했습니다.'); render(); counts(); };
+  $('#ruleForm').onsubmit = ev => {
+    ev.preventDefault();
+    const kw = $('#fKw').value.split(',').map(s => s.trim()).filter(Boolean);
+    const name = $('#fName').value.trim();
+    const err = $('#fErr');
+    if (!name) { err.textContent = '규칙 이름을 입력하세요.'; err.hidden = false; return; }
+    if (!kw.length) { err.textContent = '감지할 단어를 하나 이상 입력하세요.'; err.hidden = false; return; }
+    const data = { name, keywords: kw, match: document.querySelector('[name=fMatch]:checked').value, sender: $('#fSender').value.trim(),
+      priority: Math.max(1, +$('#fPrio').value || 1), mode: document.querySelector('[name=fMode]:checked').value, template: tpl.value, on: e.on };
+    if (e.id) Object.assign(rule(e.id), data); else S.rules.push({ id: ++uid, ...data });
+    S.editRule = null; toast(`"${name}" 규칙을 ${e.id ? '저장' : '등록'}했습니다. 새로 받는 메일부터 적용됩니다.`); render(); counts();
+  };
+}
+
+function rAccount() {
+  const a = S.account;
+  const P = { gmail: ['Gmail', 'Google 계정 로그인'], outlook: ['Outlook', 'Microsoft 365'], naver: ['네이버 메일', 'IMAP/SMTP 사용 설정 필요'], imap: ['직접 입력', '회사 메일 서버 IMAP/SMTP'] };
+  const stepCls = n => a.step > n ? 'done' : a.step === n ? 'cur' : '';
+  $('#view').innerHTML = `<div class="acct-wrap">
+    <div class="steps"><div class="step ${stepCls(1)}"><i>1</i>메일 서비스 선택</div><div class="step ${stepCls(2)}"><i>2</i>인증 코드 확인</div><div class="step ${a.step === 3 ? 'done' : ''}"><i>3</i>연결 완료</div></div>
+    ${a.step === 3 ? `
+      <div class="panel"><div class="panel-h"><i class="dot ok"></i> 연결됨 <span style="flex:1"></span><button class="btn sm" id="reconnect" type="button">다른 계정 연결</button></div><div class="panel-b">
+        <dl class="kv" style="margin:0">
+          <div><dt>메일 주소</dt><dd>${esc(a.email)}</dd></div><div><dt>서비스</dt><dd>${P[a.provider][0]}</dd></div><div><dt>인증 시각</dt><dd class="mono">${esc(a.verifiedAt)}</dd></div>
+        </dl>
+        <ul class="status-list">
+          <li><span>메일 받기 (IMAP)</span><span class="pill ok">정상 · 1분마다 확인</span></li>
+          <li><span>메일 보내기 (SMTP)</span><span class="pill ok">정상</span></li>
+        </ul></div></div>
+      <div class="panel"><div class="panel-h">발송 설정</div><div class="panel-b">
+        <div style="display:flex;align-items:center;gap:12px;justify-content:space-between"><div><b>자동 발송 허용</b><div class="hint">끄면 "바로 자동 발송" 규칙도 모두 검증함으로 갑니다.</div></div>
+          <label class="switch"><input type="checkbox" id="autoSend" ${a.autoSend ? 'checked' : ''} aria-label="자동 발송 허용"><span></span></label></div>
+        <div class="field"><label for="sig">서명 ({{서명}} 자리에 들어갑니다)</label><input class="input" id="sig" value="${esc(a.signature)}"></div>
+      </div></div>`
+    : a.step === 1 ? `
+      <div class="panel"><div class="panel-h">어떤 메일을 연결할까요?</div><div class="panel-b">
+        <div class="providers">${Object.entries(P).map(([k, v]) => `<button class="prov ${a.provider === k ? 'on' : ''}" data-prov="${k}" type="button"><b>${v[0]}</b><small>${v[1]}</small></button>`).join('')}</div>
+        <div class="field"><label for="aEmail">메일 주소</label><input class="input" id="aEmail" type="email" value="${esc(a.email)}"></div>
+        ${a.provider === 'imap' || a.provider === 'naver' ? `<div class="grid2">
+          <div class="field"><label for="imapH">IMAP 서버</label><input class="input mono" id="imapH" value="${a.provider === 'naver' ? 'imap.naver.com:993' : 'mail.company.co.kr:993'}"></div>
+          <div class="field"><label for="smtpH">SMTP 서버</label><input class="input mono" id="smtpH" value="${a.provider === 'naver' ? 'smtp.naver.com:465' : 'mail.company.co.kr:465'}"></div>
+          <div class="field"><label for="appPw">비밀번호 또는 앱 비밀번호</label><input class="input" id="appPw" type="password" value="example-pass"></div></div>` : `<div class="hint">${P[a.provider][0]} 로그인 창에서 메일 읽기·보내기 권한을 허용하게 됩니다.</div>`}
+        <div class="err" id="aErr" hidden></div>
+        <div class="actions"><button class="btn primary" id="sendCode" type="button">인증 코드 보내기</button></div>
+      </div></div>`
+    : `
+      <div class="panel"><div class="panel-h">인증 코드 확인</div><div class="panel-b">
+        <p style="margin:0"><b>${esc(a.email)}</b>(으)로 6자리 코드를 보냈습니다. 10분 안에 입력하세요.</p>
+        <div class="field" style="max-width:220px"><label for="aCode">인증 코드</label><input class="input mono" id="aCode" inputmode="numeric" maxlength="6" placeholder="000000" style="letter-spacing:.3em;font-size:18px"></div>
+        <div class="hint">시연용 코드: <span class="mono">${a.code}</span></div>
+        <div class="err" id="cErr" hidden></div>
+        <div class="actions"><button class="btn primary" id="verify" type="button">인증하기</button><button class="btn" id="back" type="button">이전</button></div>
+      </div></div>`}
+  <div class="m-only"><button class="btn" id="logout2" type="button">로그아웃</button></div>
+  </div>`;
+  $('#logout2').onclick = () => $('#logout').click();
+  if (a.step === 3) {
+    $('#reconnect').onclick = () => { a.step = 1; render(); counts(); };
+    $('#autoSend').onchange = ev => { a.autoSend = ev.target.checked; toast(a.autoSend ? '자동 발송을 허용했습니다.' : '모든 답장이 검증함을 거치도록 바꿨습니다.'); };
+    $('#sig').oninput = ev => a.signature = ev.target.value;
+  } else if (a.step === 1) {
+    document.querySelectorAll('[data-prov]').forEach(b => b.onclick = () => { a.email = $('#aEmail').value; a.provider = b.dataset.prov; render(); });
+    $('#sendCode').onclick = () => {
+      const v = $('#aEmail').value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { const e = $('#aErr'); e.textContent = '메일 주소 형식을 확인하세요. 예: name@company.co.kr'; e.hidden = false; return; }
+      a.email = v; a.code = String(Math.floor(100000 + Math.random() * 900000)); a.step = 2; render(); $('#aCode').focus();
+    };
+  } else {
+    $('#back').onclick = () => { a.step = 1; render(); };
+    $('#verify').onclick = () => {
+      if ($('#aCode').value.trim() !== a.code) { const e = $('#cErr'); e.textContent = '코드가 맞지 않습니다. 메일함의 6자리 숫자를 다시 확인하세요.'; e.hidden = false; return; }
+      a.step = 3; a.verifiedAt = '2026-' + nowStr(); toast('메일 계정을 연결했습니다.'); render(); counts();
+    };
+  }
+}
+
+/* ───── 이벤트 ───── */
+$('#loginForm').onsubmit = ev => {
+  ev.preventDefault();
+  const id = $('#lgId').value.trim(), pw = $('#lgPw').value, err = $('#lgErr');
+  if (!id.includes('@')) { err.textContent = '아이디는 이메일 형식으로 입력하세요.'; err.hidden = false; return; }
+  if (pw.length < 4) { err.textContent = '비밀번호를 4자 이상 입력하세요.'; err.hidden = false; return; }
+  S.user = id; $('#userLabel').textContent = id + ' 로그인 중';
+  $('#login').hidden = true; $('#app').hidden = false; go('inbox');
+};
+$('#logout').onclick = () => { $('#app').hidden = true; $('#login').hidden = false; };
+document.querySelectorAll('.nav').forEach(n => n.onclick = () => go(n.dataset.view));
+$('#simBtn').onclick = () => {
+  if (S.account.step !== 3) { toast('먼저 내 메일 인증에서 계정을 연결하세요.'); return; }
+  const s = pool[poolIdx++ % pool.length];
+  const m = { id: ++uid, unread: true, time: nowStr(), ...s }; process(m); S.mails.unshift(m);
+  const where = { pending: '검증함에 답장 초안이 준비됐습니다', sent: '규칙에 따라 자동으로 답장했습니다', nomatch: '맞는 규칙이 없어 수신함에 남겼습니다' }[m.status];
+  toast(`새 메일: ${m.from} · ${where}`);
+  S.sel.inbox = m.id; go('inbox', true);
+};
+</script>
+</body>
+</html>
